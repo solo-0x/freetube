@@ -24,7 +24,7 @@ jobs:
             -configuration Release -sdk iphoneos -destination 'generic/platform=iOS' \
             -derivedDataPath build/DerivedData \
             CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
-            DEVELOPMENT_TEAM="" ARCHS=arm64 ONLY_ACTIVE_ARCH=NO \
+            DEVELOPMENT_TEAM="" ARCHS=arm64 ONLY_ACTIVE_ARCH=NO ENABLE_DEBUG_DYLIB=NO \
             build 2>&1 | tee build.log
       - name: Package and verify IPA
         run: |
@@ -32,7 +32,7 @@ jobs:
           APP=build/DerivedData/Build/Products/Release-iphoneos/FreeTube.app
           test -d "$APP"
           EXECUTABLE=$(/usr/libexec/PlistBuddy -c 'Print CFBundleExecutable' "$APP/Info.plist")
-          lipo -verify_arch arm64 "$APP/$EXECUTABLE"
+          lipo "$APP/$EXECUTABLE" -verify_arch arm64
           otool -l "$APP/$EXECUTABLE" > macho.txt
           if grep -A5 LC_ENCRYPTION_INFO macho.txt | grep -Eq 'cryptid +[1-9]'; then
             echo 'Encrypted executable cannot run in LiveContainer'

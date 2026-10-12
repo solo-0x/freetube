@@ -2,6 +2,9 @@
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0">
 <dict>
+	<!-- LNPopupUI must avoid iOS 26 restricted tab-bar accessory APIs in LiveContainer. -->
+	<key>UIDesignRequiresCompatibility</key>
+	<true/>
 	<key>BGTaskSchedulerPermittedIdentifiers</key>
 	<array>
 		<string>com.leshko.freetube.resume-downloads</string>

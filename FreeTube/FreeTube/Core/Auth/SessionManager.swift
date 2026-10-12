@@ -29,9 +29,9 @@ final class SessionManager {
         log.info("[session] bootstrap: visitor data ensured")
     }
 
-    func signIn(with header: String) async {
+    func signIn(with header: String) async throws {
         log.info("[session] signIn called — header length=\(header.count, privacy: .public)")
-        store.storeHeader(header)
+        try store.storeHeader(header)
         client.applyCookies(header)
         AuthState.shared.status = .loggedIn(displayName: nil)
         log.info("[session] signIn complete → status=.loggedIn")

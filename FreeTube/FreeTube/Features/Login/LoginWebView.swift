@@ -22,9 +22,15 @@ struct LoginWebView: UIViewRepresentable {
         configuration.websiteDataStore = .nonPersistent()
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
+        coordinator.observe(webView)
         webView.allowsBackForwardNavigationGestures = true
         webView.load(URLRequest(url: LoginCoordinator.startURL))
         return webView
+    }
+
+    static func dismantleUIView(_ uiView: WKWebView, coordinator: Delegate) {
+        coordinator.parent.coordinator.stopObserving()
+        uiView.navigationDelegate = nil
     }
 
     func updateUIView(_ webView: WKWebView, context: Context) {

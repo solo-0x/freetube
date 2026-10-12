@@ -11,7 +11,7 @@ import OSLog
 ///   `SSID`, `APISID`) are present before storing the cookie header in Keychain.
 @available(iOS 17.0, *)
 @MainActor
-final class LoginCoordinator: NSObject, ObservableObject {
+final class LoginCoordinator: NSObject, ObservableObject, WKHTTPCookieStoreObserver {
     enum State: Equatable {
         case idle
         case loading
@@ -23,8 +23,57 @@ final class LoginCoordinator: NSObject, ObservableObject {
 
     @Published private(set) var state: State = .idle
 
+    private var captureTask: Task<Void, Never>?
+    private weak var loginWebView: WKWebView?
+    private weak var observedCookieStore: WKHTTPCookieStore?
+
     func resetState() {
+        captureTask?.cancel()
+        captureTask = nil
         state = .idle
+        loginWebView?.load(URLRequest(url: Self.startURL))
+    }
+
+    /// Observe asynchronous cookie writes in the exact store used by the login web view.
+    func observe(_ webView: WKWebView) {
+        loginWebView = webView
+        let store = webView.configuration.websiteDataStore.httpCookieStore
+        observedCookieStore = store
+        store.add(self)
+    }
+
+    func stopObserving() {
+        captureTask?.cancel()
+        captureTask = nil
+        observedCookieStore?.remove(self)
+        observedCookieStore = nil
+        loginWebView = nil
+    }
+
+    nonisolated func cookiesDidChange(in cookieStore: WKHTTPCookieStore) {
+        Task { @MainActor [weak self] in
+            guard let self, let webView = self.loginWebView else { return }
+            self.handleNavigation(to: webView.url, in: webView)
+        }
+    }
+
+    private func beginCapture(from webView: WKWebView) {
+        guard captureTask == nil, state != .succeeded else { return }
+        if case .failed = state { return }
+        state = .verifying
+        captureTask = Task { [weak self, weak webView] in
+            guard let self, let webView else { return }
+            defer { self.captureTask = nil }
+            for _ in 0..<30 {
+                guard !Task.isCancelled else { return }
+                await self.captureCookies(from: webView)
+                if self.state == .succeeded { return }
+                if case .failed = self.state { return }
+                do { try await Task.sleep(for: .seconds(1)) }
+                catch { return }
+            }
+            self.state = .failed("YouTube session cookies are incomplete. Please retry sign-in and wait for the YouTube redirect to finish.")
+        }
     }
 
     private let log = AppLog(subsystem: "com.leshko.freetube", category: "LoginCoordinator")
@@ -60,10 +109,9 @@ final class LoginCoordinator: NSObject, ObservableObject {
             return
         }
         log.info("[login] nav → host=\(url.host ?? "?", privacy: .public) path=\(url.path, privacy: .public)")
-        if url.host?.contains(Self.signedInHostFragment) == true {
+        if let host = url.host?.lowercased(), host == "youtube.com" || host.hasSuffix(".youtube.com") {
             log.info("[login] reached youtube.com — entering verifying state, will read cookies")
-            state = .verifying
-            Task { await captureCookies(from: webView) }
+            beginCapture(from: webView)
             return
         }
         if isPostSignInGoogleURL(url) {
@@ -141,8 +189,15 @@ final class LoginCoordinator: NSObject, ObservableObject {
             return
         }
         log.info("[login] required cookies present, signing in (header length=\(header.count, privacy: .public))")
-        await session.signIn(with: header)
-        state = .succeeded
+        guard !Task.isCancelled else { return }
+        do {
+            try await session.signIn(with: header)
+            state = .succeeded
+        } catch {
+            log.error("[login] secure session storage failed: \(String(describing: error), privacy: .public)")
+            state = .failed("Could not save the login session securely. Please check LiveContainer keychain settings and retry. \(error)")
+            return
+        }
         log.info("[login] sign-in succeeded — state=.succeeded")
     }
 

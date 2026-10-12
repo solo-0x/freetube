@@ -23,13 +23,9 @@ final class CookieStore {
 
     private init() {}
 
-    func storeHeader(_ header: String) {
-        do {
-            try KeychainHelper.set(header, for: Self.keychainKey)
-            log.info("[cookies] keychain write OK (length=\(header.count, privacy: .public))")
-        } catch {
-            log.error("[cookies] keychain write FAILED: \(String(describing: error), privacy: .public)")
-        }
+    func storeHeader(_ header: String) throws {
+        try KeychainHelper.set(header, for: Self.keychainKey)
+        log.info("[cookies] keychain write OK")
     }
 
     func loadHeader() -> String? {

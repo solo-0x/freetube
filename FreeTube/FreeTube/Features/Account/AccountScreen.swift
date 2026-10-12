@@ -5,6 +5,7 @@ import Kingfisher
 struct AccountScreen: View {
     @State private var model = AccountViewModel()
     @State private var showingLogin = false
+    @State private var auth = AuthState.shared
 
     var body: some View {
         NavigationStack {
@@ -35,6 +36,24 @@ struct AccountScreen: View {
                         } label: {
                             Label("Sign out", systemImage: "rectangle.portrait.and.arrow.right")
                         }
+                    }
+                } else if case .loggedIn = auth.status {
+                    Section {
+                        if model.isLoading {
+                            ProgressView("正在验证登录状态…")
+                        } else if model.sessionRejected {
+                            Label("登录验证未通过", systemImage: "exclamationmark.circle")
+                            Text("会话已保存，但 YouTube 未认可当前会话，请重试验证或重新登录。")
+                                .font(.caption).foregroundStyle(.secondary)
+                            Button("重新登录") { showingLogin = true }
+                        } else {
+                            Label("登录会话已保存", systemImage: "person.crop.circle.badge.checkmark")
+                            Text("账号资料暂未加载成功，请重试。")
+                                .font(.caption).foregroundStyle(.secondary)
+                        }
+                        Button("重新加载账号资料") { Task { await model.load() } }
+                            .disabled(model.isLoading)
+                        Button("退出登录", role: .destructive) { Task { await model.signOut() } }
                     }
                 } else {
                     Section {
@@ -68,6 +87,9 @@ struct AccountScreen: View {
             }
             .navigationTitle("Account")
             .task { await model.load() }
+            .onChange(of: auth.status) { _, _ in
+                Task { await model.load() }
+            }
             .sheet(isPresented: $showingLogin) {
                 LoginScreen()
                     .onDisappear { Task { await model.load() } }

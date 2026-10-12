@@ -51,9 +51,13 @@ final class CookieStore {
     /// (often the first) which can be the mobile-only value that fails to validate at
     /// `www.youtube.com/youtubei/v1/...`. Picking the broadest-domain variant per name fixes
     /// the resulting "logged out despite valid cookies" symptom.
-    func makeHeader(from cookies: [HTTPCookie]) -> String? {
+    func makeHeader(from cookies: [HTTPCookie], requireLegacySet: Bool = true) -> String? {
         let scoped = cookies.filter {
-            $0.domain.hasSuffix("youtube.com") || $0.domain.hasSuffix(".google.com")
+            let domain = $0.domain.lowercased().trimmingCharacters(in: CharacterSet(charactersIn: "."))
+            return (domain == "youtube.com" || domain == "www.youtube.com")
+                && !$0.value.isEmpty
+                && ($0.expiresDate.map { $0 > Date() } ?? true)
+                && $0.path == "/"
         }
 
         // Domain inventory — quick way to confirm we have cookies from `.youtube.com` (cross-
@@ -105,9 +109,21 @@ final class CookieStore {
 
         let chosenNames = Set(chosen.map(\.name))
         let missing = Self.requiredCookieNames.subtracting(chosenNames).sorted()
-        guard missing.isEmpty else {
+        guard !requireLegacySet || missing.isEmpty else {
             log.notice("[cookies] makeHeader: incomplete — missing=[\(missing.joined(separator: ","), privacy: .public)]")
             return nil
+        }
+        if !requireLegacySet {
+            let names = Set(chosen.map(\.name))
+            guard names.contains("SAPISID") || names.contains("__Secure-3PAPISID") else { return nil }
+            // YouTubeKit's hash generator reads SAPISID. The secure equivalent can supply
+            // the same authentication hash when the legacy name is absent.
+            if !names.contains("SAPISID"), let secure = chosen.first(where: { $0.name == "__Secure-3PAPISID" }) {
+                guard let alias = HTTPCookie(properties: [
+                    .name: "SAPISID", .value: secure.value, .domain: ".youtube.com", .path: "/", .secure: "TRUE"
+                ]) else { return nil }
+                chosen.append(alias)
+            }
         }
         let dropped = scoped.count - chosen.count
         let header = chosen.map { "\($0.name)=\($0.value)" }.joined(separator: "; ")

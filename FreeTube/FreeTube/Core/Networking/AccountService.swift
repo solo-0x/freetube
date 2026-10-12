@@ -42,6 +42,21 @@ final class AccountService: AccountServicing {
         self.client = client
     }
 
+    /// Validate a candidate without changing the active application session.
+    func validateSession(header: String) async throws -> AccountInfo {
+        let candidate = YouTubeModel()
+        candidate.cookies = header
+        candidate.alwaysUseCookies = true
+        let response = try await AccountInfosResponse.sendThrowingRequest(
+            youtubeModel: candidate, data: [:]
+        )
+        guard !response.isDisconnected else { throw YouTubeServiceError.notAuthenticated }
+        return AccountInfo(
+            displayName: response.name ?? "", handle: response.channelHandle,
+            avatarURL: Mappers.bestThumbnailURL(response.avatar), channelID: nil
+        )
+    }
+
     func fetchAccountInfo() async throws -> AccountInfo {
         log.info("[account] fetchAccountInfo — model.cookies length=\(self.client.model.cookies.count, privacy: .public) alwaysUseCookies=\(self.client.model.alwaysUseCookies, privacy: .public)")
         let response: AccountInfosResponse

@@ -22,6 +22,10 @@ struct LoginScreen: View {
             .navigationTitle("Sign in")
             .navigationBarTitleDisplayMode(.inline)
             .toolbar {
+                ToolbarItem(placement: .topBarTrailing) {
+                    Button("完成登录") { coordinator.completeLogin() }
+                        .disabled(coordinator.state == .verifying)
+                }
                 ToolbarItem(placement: .topBarLeading) {
                     Button("Cancel") { dismiss() }
                 }

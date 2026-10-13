@@ -42,14 +42,38 @@ final class AccountService: AccountServicing {
         self.client = client
     }
 
+    /// Match the Origin used by YouTubeKit's SAPISIDHASH generator. An Origin has no path.
+    private func prepareAccountRequest(_ model: YouTubeModel) {
+        var headers = model.getHeaders(forType: .userAccountHeaders)
+        for index in headers.headers.indices {
+            let name = headers.headers[index].name.lowercased()
+            if name == "origin" || name == "x-origin" {
+                headers.headers[index].content = "https://www.youtube.com"
+            }
+        }
+        model.customHeaders[.userAccountHeaders] = headers
+    }
+
+    /// Preserve the actual server code/message rather than NSError's generic "error 1".
+    private func accountFailure(_ error: Error) -> Error {
+        guard let response = error as? YouTubeKit.NetworkError else { return error }
+        return AccountRequestFailure(code: response.code, reason: response.message)
+    }
+
     /// Validate a candidate without changing the active application session.
     func validateSession(header: String) async throws -> AccountInfo {
         let candidate = YouTubeModel()
         candidate.cookies = header
         candidate.alwaysUseCookies = true
-        let response = try await AccountInfosResponse.sendThrowingRequest(
-            youtubeModel: candidate, data: [:]
-        )
+        prepareAccountRequest(candidate)
+        let response: AccountInfosResponse
+        do {
+            response = try await AccountInfosResponse.sendThrowingRequest(
+                youtubeModel: candidate, data: [:]
+            )
+        } catch {
+            throw accountFailure(error)
+        }
         guard !response.isDisconnected else { throw YouTubeServiceError.notAuthenticated }
         return AccountInfo(
             displayName: response.name ?? "", handle: response.channelHandle,
@@ -59,6 +83,7 @@ final class AccountService: AccountServicing {
 
     func fetchAccountInfo() async throws -> AccountInfo {
         log.info("[account] fetchAccountInfo — model.cookies length=\(self.client.model.cookies.count, privacy: .public) alwaysUseCookies=\(self.client.model.alwaysUseCookies, privacy: .public)")
+        prepareAccountRequest(client.model)
         let response: AccountInfosResponse
         do {
             response = try await AccountInfosResponse.sendThrowingRequest(
@@ -67,7 +92,7 @@ final class AccountService: AccountServicing {
             )
         } catch {
             log.error("[account] AccountInfosResponse failed: \(String(describing: error), privacy: .public)")
-            throw YouTubeServiceError.network(error)
+            throw YouTubeServiceError.network(accountFailure(error))
         }
         guard !response.isDisconnected else {
             log.notice("[account] AccountInfosResponse isDisconnected=true (YouTube says logged out) — has name=\(response.name != nil, privacy: .public) handle=\(response.channelHandle != nil, privacy: .public)")
@@ -153,5 +178,16 @@ final class AccountService: AccountServicing {
             throw YouTubeServiceError.notAuthenticated
         }
         return response.results.map(Mappers.playlist(from:))
+    }
+}
+
+/// Contains only YouTube's error code and message; never carries request cookies or response bodies.
+private struct AccountRequestFailure: LocalizedError, Sendable {
+    let code: Int
+    let reason: String
+
+    var errorDescription: String? {
+        let summary = String(reason.prefix(500))
+        return "YouTube 账号接口错误（代码 \(code)）：\(summary.isEmpty ? "服务器未提供错误说明" : summary)"
     }
 }

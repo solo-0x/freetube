@@ -123,7 +123,7 @@ final class LoginCoordinator: NSObject, ObservableObject, WKHTTPCookieStoreObser
                         if case YouTubeServiceError.notAuthenticated = error {
                             self.lastFailure = "YouTube 未认可当前会话，请在网页中完成登录后点击“完成登录”。"
                         } else {
-                            self.lastFailure = "账号验证请求失败，请检查网络后重试：\(error.localizedDescription)"
+                            self.lastFailure = "账号验证请求失败：\(error.localizedDescription)"
                         }
                         self.state = .awaitingCredentials
                     }
@@ -134,7 +134,10 @@ final class LoginCoordinator: NSObject, ObservableObject, WKHTTPCookieStoreObser
             if explicit {
                 let absent = CookieStore.requiredCookieNames.subtracting(self.presentNames).sorted().joined(separator: ", ")
                 let detail = self.lastFailure.isEmpty ? "尚未读取到可验证的 YouTube 登录凭据。请确认网页“我”页面已显示账号。" : self.lastFailure
-                self.state = .failed("\(detail)\n未出现的传统 Cookie 名称（仅诊断，不要求全部存在）：\(absent)")
+                let cookieDetail = absent.isEmpty
+                    ? "传统 Cookie 名称均已读取，失败发生在账号接口验证阶段。"
+                    : "未出现的传统 Cookie 名称（仅诊断）：\(absent)"
+                self.state = .failed("\(detail)\n\(cookieDetail)")
             } else {
                 self.state = .awaitingCredentials
             }
